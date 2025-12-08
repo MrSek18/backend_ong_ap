@@ -15,14 +15,11 @@ WORKDIR /var/www
 # Copiar archivos del proyecto
 COPY . .
 
-# Instalar dependencias de Laravel
-RUN composer install --no-dev --optimize-autoloader
-
-# Generar cache de configuración
-RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
+# Instalar dependencias de Laravel (sin scripts para evitar fallos en build)
+RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 # Exponer puerto
 EXPOSE 8000
 
-# Comando de inicio
+# Comando de inicio (se define en Render)
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
