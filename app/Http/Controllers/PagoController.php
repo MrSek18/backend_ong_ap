@@ -33,7 +33,7 @@ class PagoController extends Controller
 
         // Configura las opciones con el access token
         $options = new RequestOptions();
-        $options->setAccessToken(env("MERCADOPAGO_ACCESS_TOKEN"));
+        $options->setAccessToken(config("services.mercadopago.access_token"));
 
         try {
             $payload = [
@@ -107,7 +107,7 @@ class PagoController extends Controller
                 $paymentClient = new PaymentClient();
 
                 $options = new RequestOptions();
-                $options->setAccessToken(env("MERCADOPAGO_ACCESS_TOKEN"));
+                $options->setAccessToken(config("services.mercadopago.access_token"));
 
                 $payment = $paymentClient->get($paymentId, $options);
 
