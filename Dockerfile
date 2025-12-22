@@ -1,26 +1,43 @@
-# Imagen base con PHP y extensiones necesarias
-FROM php:8.2-fpm
+FROM php:8.3-fpm
 
-# Instalar dependencias de sistema y extensiones de PHP
+# Instalar dependencias del sistema + nginx
 RUN apt-get update && apt-get install -y \
-    libpng-dev libjpeg-dev libfreetype6-dev zip unzip git curl \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install pdo pdo_mysql gd
+    nginx \
+    git \
+    unzip \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    libonig-dev \
+    libzip-dev \
+    zip \
+    curl \
+    gettext-base \
+ && docker-php-ext-install pdo pdo_mysql mbstring zip gd \
+ && rm -rf /var/lib/apt/lists/*
 
 # Instalar Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Establecer directorio de trabajo
+# Directorio de trabajo
 WORKDIR /var/www/html
 
-# Copiar código del backend
+# Copiar el proyecto
 COPY . .
 
-# Instalar dependencias de Laravel
+# Permisos Laravel
+RUN chmod -R 775 storage bootstrap/cache
+
+# Instalar dependencias PHP
 RUN composer install --no-dev --optimize-autoloader
 
-# Exponer puerto 80
-EXPOSE 80
+# Config nginx (template)
+COPY nginx.template.conf /etc/nginx/nginx.template.conf
 
-# Comando de inicio (puedes usar artisan serve o Nginx)
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=80"]
+# Script de arranque
+COPY docker-start.sh /usr/local/bin/docker-start.sh
+RUN chmod +x /usr/local/bin/docker-start.sh
+
+EXPOSE 8080
+
+CMD ["docker-start.sh"]
