@@ -22,13 +22,13 @@ class PagoController extends Controller
             'payment_method_id' => 'required|string',
             'installments' => 'required|integer|min:1',
             'identification_type' => 'required|string',
-            'identification_number' => 'required|string'
+            'identification_number' => 'required|string',
+            'issuer_id' => 'nullable|string',
         ]);
 
-        Log::info('Access Token usado:', [env('MERCADOPAGO_ACCESS_TOKEN')]);
         Log::info('Payload recibido en backend:', $request->all());
 
-        $client = new PaymentClient();
+        $client = new PaymentClient(env('MERCADOPAGO_ACCESS_TOKEN'));
 
         try {
             $payload = [
@@ -65,7 +65,7 @@ class PagoController extends Controller
 
         $donacionId = DB::table('donaciones')->insertGetId([
             'payment_id' => $payment->id,
-            'monto' => $request->monto,
+            'monto' => $payment->transaction_amount,
             'estado' => $payment->status,
             'plan' => $request->plan,
             'email' => $request->email,
