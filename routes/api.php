@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 Route::post('/pago', [PagoController::class, 'crearPago']);
-Route::post('/webhook', [PagoController::class, 'webhook']);}
+Route::post('/webhook', [PagoController::class, 'webhook']);
 
 // new health
 Route::get('/health', function () {
