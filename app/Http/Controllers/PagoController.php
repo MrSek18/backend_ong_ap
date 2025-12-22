@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use MercadoPago\Client\Payment\PaymentClient;
+use MercadoPago\Client\Common\RequestOptions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MercadoPago\Exceptions\MPApiException;
@@ -28,7 +29,11 @@ class PagoController extends Controller
 
         Log::info('Payload recibido en backend:', $request->all());
 
-        $client = new PaymentClient(env('MERCADOPAGO_ACCESS_TOKEN'));
+        $client = new PaymentClient();
+
+        // Configura las opciones con el access token
+        $options = new RequestOptions();
+        $options->setAccessToken(env("MERCADOPAGO_ACCESS_TOKEN"));
 
         try {
             $payload = [
@@ -48,7 +53,7 @@ class PagoController extends Controller
 
             Log::info('Payload enviado a MercadoPago:', $payload);
 
-            $payment = $client->create($payload);
+            $payment = $client->create($payload, $options);
         } catch (MPApiException $e) {
             $response = $e->getApiResponse();
             Log::error('Error al crear pago', [
@@ -61,6 +66,12 @@ class PagoController extends Controller
                 'error' => $e->getMessage(),
                 'details' => $response->getContent()
             ], 400);
+        } catch (\Exception $e) {
+            Log::error('Error inesperado al crear pago', ['message' => $e->getMessage()]);
+            return response()->json([
+                'error' => 'Unexpected error',
+                'details' => $e->getMessage()
+            ], 500);
         }
 
         $donacionId = DB::table('donaciones')->insertGetId([
@@ -94,7 +105,11 @@ class PagoController extends Controller
 
             try {
                 $paymentClient = new PaymentClient();
-                $payment = $paymentClient->get($paymentId);
+
+                $options = new RequestOptions();
+                $options->setAccessToken(env("MERCADOPAGO_ACCESS_TOKEN"));
+
+                $payment = $paymentClient->get($paymentId, $options);
 
                 DB::table('donaciones')->updateOrInsert(
                     ['payment_id' => $payment->id],
@@ -112,6 +127,8 @@ class PagoController extends Controller
                 );
             } catch (MPApiException $e) {
                 Log::error('Error al obtener pago: ' . $e->getMessage(), $e->getApiResponse());
+            } catch (\Exception $e) {
+                Log::error('Error inesperado en webhook', ['message' => $e->getMessage()]);
             }
         }
 
