@@ -11,6 +11,25 @@ use MercadoPago\Exceptions\MPApiException;
 
 class PagoController extends Controller
 {
+    /**
+     * Espera hasta que la DB despierte (máx X segundos)
+     */
+    private function waitForDatabase(int $timeoutSeconds = 7): bool
+    {
+        $start = microtime(true);
+
+        while ((microtime(true) - $start) < $timeoutSeconds) {
+            try {
+                DB::statement('SELECT 1');
+                return true;
+            } catch (\Exception $e) {
+                usleep(500000); // 0.5 segundos
+            }
+        }
+
+        return false;
+    }
+
     public function crearPago(Request $request)
     {
         Log::info('Entró a crearPago');
@@ -27,16 +46,13 @@ class PagoController extends Controller
             'issuer_id' => 'nullable|string',
         ]);
 
-        Log::info('Payload recibido en backend', $request->all());
-
+        /** Crear pago en MercadoPago  */
         $client = new PaymentClient();
-
         $options = new RequestOptions();
         $options->setAccessToken(config('services.mercadopago.access_token'));
 
-        /**  MercadoPago  */
         try {
-            $payload = [
+            $payment = $client->create([
                 'transaction_amount' => (float) $request->monto,
                 'token' => $request->token,
                 'description' => 'Donación - ' . $request->plan,
@@ -49,11 +65,7 @@ class PagoController extends Controller
                         'number' => $request->identification_number,
                     ],
                 ],
-            ];
-
-            Log::info('Payload enviado a MercadoPago', $payload);
-
-            $payment = $client->create($payload, $options);
+            ], $options);
 
         } catch (MPApiException $e) {
             $response = $e->getApiResponse();
@@ -69,41 +81,52 @@ class PagoController extends Controller
             ], 400);
 
         } catch (\Exception $e) {
-            Log::error('Error inesperado al crear pago', [
+            Log::error('Error inesperado MercadoPago', [
                 'message' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'error' => 'Unexpected error',
-                'details' => $e->getMessage(),
             ], 500);
         }
 
-        /**  DB  */
+        /**  DB y guardar (HASTA 7s) */
         $donacionId = null;
 
-        try {
-            $donacionId = DB::table('donaciones')->insertGetId([
+        if ($this->waitForDatabase(7)) {
+            try {
+                $donacionId = DB::table('donaciones')->insertGetId([
+                    'payment_id' => $payment->id,
+                    'monto' => $payment->transaction_amount,
+                    'estado' => $payment->status,
+                    'plan' => $request->plan,
+                    'email' => $request->email,
+                    'identification_type' => $request->identification_type,
+                    'identification_number' => $request->identification_number,
+                    'payment_method_id' => $request->payment_method_id,
+                    'installments' => $request->installments,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                Log::info('Donación guardada correctamente', [
+                    'payment_id' => $payment->id,
+                    'donacion_id' => $donacionId,
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error('DB activa pero insert falló', [
+                    'payment_id' => $payment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        } else {
+            Log::error('DB no despertó tras 7 segundos', [
                 'payment_id' => $payment->id,
-                'monto' => $payment->transaction_amount,
-                'estado' => $payment->status,
-                'plan' => $request->plan,
-                'email' => $request->email,
-                'identification_type' => $request->identification_type,
-                'identification_number' => $request->identification_number,
-                'payment_method_id' => $request->payment_method_id,
-                'installments' => $request->installments,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        } catch (\Exception $e) {
-            Log::warning('DB sleeping, se guardará vía webhook', [
-                'payment_id' => $payment->id,
-                'error' => $e->getMessage(),
             ]);
         }
 
-        /**  Respuesta OK */
+        /**  Respuesta */
         return response()->json([
             'payment_id' => $payment->id,
             'status' => $payment->status,
@@ -112,10 +135,10 @@ class PagoController extends Controller
         ]);
     }
 
+    
     public function webhook(Request $request)
     {
         $data = $request->all();
-
         Log::info('Webhook recibido', $data);
 
         if (
@@ -125,12 +148,11 @@ class PagoController extends Controller
             $paymentId = $data['data']['id'];
 
             try {
-                $paymentClient = new PaymentClient();
-
+                $client = new PaymentClient();
                 $options = new RequestOptions();
                 $options->setAccessToken(config('services.mercadopago.access_token'));
 
-                $payment = $paymentClient->get($paymentId, $options);
+                $payment = $client->get($paymentId, $options);
 
                 DB::table('donaciones')->updateOrInsert(
                     ['payment_id' => $payment->id],
@@ -149,12 +171,12 @@ class PagoController extends Controller
                     ]
                 );
 
-            } catch (MPApiException $e) {
-                Log::error('Error MercadoPago webhook', [
-                    'message' => $e->getMessage(),
+                Log::info('Webhook sincronizó donación', [
+                    'payment_id' => $payment->id,
                 ]);
+
             } catch (\Exception $e) {
-                Log::error('Error inesperado webhook', [
+                Log::error('Error webhook MercadoPago', [
                     'message' => $e->getMessage(),
                 ]);
             }
