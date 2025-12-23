@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
             $table->string('payment_id')->nullable(); // ID del pago en Mercado Pago
             $table->decimal('monto', 10, 2);          // transaction_amount
-            $table->enum('estado', ['pending', 'approved', 'rejected'])->default('pending');
-            $table->enum('plan', ['unica', 'mensual']); // tu lógica de donación
+            $table->string('estado')->default('pending');
+            $table->enum('plan', ['unica', 'mensual']); // lógica de donación
             $table->string('email');                   // payer.email
             $table->string('identification_type');     // payer.identification.type
             $table->string('identification_number');   // payer.identification.number
