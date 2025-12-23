@@ -46,7 +46,6 @@ class PagoController extends Controller
             'issuer_id' => 'nullable|string',
         ]);
 
-        /** Crear pago en MercadoPago  */
         $client = new PaymentClient();
         $options = new RequestOptions();
         $options->setAccessToken(config('services.mercadopago.access_token'));
@@ -66,6 +65,11 @@ class PagoController extends Controller
                     ],
                 ],
             ], $options);
+
+            Log::info('Pago creado en MercadoPago', [
+                'payment_id' => $payment->id,
+                'status' => $payment->status,
+            ]);
 
         } catch (MPApiException $e) {
             $response = $e->getApiResponse();
@@ -90,32 +94,38 @@ class PagoController extends Controller
             ], 500);
         }
 
-        /**  DB y guardar (HASTA 7s) */
         $donacionId = null;
 
         if ($this->waitForDatabase(7)) {
             try {
-                $donacionId = DB::table('donaciones')->insertGetId([
-                    'payment_id' => $payment->id,
-                    'monto' => $payment->transaction_amount,
-                    'estado' => $payment->status,
-                    'plan' => $request->plan,
-                    'email' => $request->email,
-                    'identification_type' => $request->identification_type,
-                    'identification_number' => $request->identification_number,
-                    'payment_method_id' => $request->payment_method_id,
-                    'installments' => $request->installments,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                DB::table('donaciones')->updateOrInsert(
+                    ['payment_id' => $payment->id],
+                    [
+                        'monto' => $payment->transaction_amount,
+                        'estado' => $payment->status ?? 'pending',
+                        'plan' => $request->plan,
+                        'email' => $request->email,
+                        'identification_type' => $request->identification_type,
+                        'identification_number' => $request->identification_number,
+                        'payment_method_id' => $request->payment_method_id,
+                        'installments' => $request->installments,
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
 
-                Log::info('Donación guardada correctamente', [
+                $donacionId = DB::table('donaciones')
+                    ->where('payment_id', $payment->id)
+                    ->value('id');
+
+                Log::info('Donación guardada / actualizada', [
                     'payment_id' => $payment->id,
                     'donacion_id' => $donacionId,
+                    'estado' => $payment->status,
                 ]);
 
             } catch (\Exception $e) {
-                Log::error('DB activa pero insert falló', [
+                Log::error('DB activa pero falló el guardado', [
                     'payment_id' => $payment->id,
                     'error' => $e->getMessage(),
                 ]);
@@ -126,7 +136,6 @@ class PagoController extends Controller
             ]);
         }
 
-        /**  Respuesta */
         return response()->json([
             'payment_id' => $payment->id,
             'status' => $payment->status,
@@ -134,6 +143,7 @@ class PagoController extends Controller
             'db_saved' => $donacionId !== null,
         ]);
     }
+
 
     
     public function webhook(Request $request)
